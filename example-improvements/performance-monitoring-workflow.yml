@@ -1,0 +1,301 @@
+# Performance monitoring and regression testing workflow
+# Place in .github/workflows/performance.yml
+
+name: Performance Monitoring
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 4 * * 1'  # Weekly performance baseline update
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  benchmark:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    
+    strategy:
+      matrix:
+        python-version: ['3.11']
+        benchmark-suite: ['basic', 'comprehensive']
+        
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Need full history for ASV
+          
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          
+      - name: Cache ASV results
+        uses: actions/cache@v4
+        with:
+          path: |
+            asv_benchmarks/.asv
+            asv_benchmarks/results
+          key: asv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('asv_benchmarks/asv.conf.json') }}
+          restore-keys: |
+            asv-${{ runner.os }}-${{ matrix.python-version }}-
+            
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install asv virtualenv
+          
+      - name: Setup ASV
+        working-directory: asv_benchmarks
+        run: |
+          asv machine --yes
+          
+      - name: Run benchmarks (Basic)
+        if: matrix.benchmark-suite == 'basic'
+        working-directory: asv_benchmarks
+        run: |
+          # Run quick benchmarks for PR validation
+          asv run --quick --show-stderr --python=same
+          
+      - name: Run benchmarks (Comprehensive)
+        if: matrix.benchmark-suite == 'comprehensive'
+        working-directory: asv_benchmarks
+        run: |
+          # Run full benchmark suite for main branch
+          asv run --show-stderr --python=same
+          
+      - name: Compare with baseline (PR only)
+        if: github.event_name == 'pull_request' && matrix.benchmark-suite == 'basic'
+        working-directory: asv_benchmarks
+        run: |
+          # Compare current PR with main branch
+          asv compare origin/main HEAD --factor=1.1 --split || true
+          asv compare origin/main HEAD --factor=1.1 --split > comparison.txt || true
+          
+      - name: Generate performance report
+        if: github.event_name == 'pull_request' && matrix.benchmark-suite == 'basic'
+        working-directory: asv_benchmarks
+        run: |
+          echo "## Performance Comparison" > performance_report.md
+          echo "" >> performance_report.md
+          echo "Comparing performance between \`main\` and this PR:" >> performance_report.md
+          echo "" >> performance_report.md
+          echo "\`\`\`" >> performance_report.md
+          cat comparison.txt >> performance_report.md || echo "No significant performance changes detected." >> performance_report.md
+          echo "\`\`\`" >> performance_report.md
+          echo "" >> performance_report.md
+          echo "**Note**: Performance changes > 10% are flagged. Small variations are normal." >> performance_report.md
+          
+      - name: Comment PR with performance results
+        if: github.event_name == 'pull_request' && matrix.benchmark-suite == 'basic'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'asv_benchmarks/performance_report.md';
+            
+            if (fs.existsSync(path)) {
+              const report = fs.readFileSync(path, 'utf8');
+              
+              // Find existing performance comment
+              const comments = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+              });
+              
+              const botComment = comments.data.find(comment => 
+                comment.user.type === 'Bot' && 
+                comment.body.includes('Performance Comparison')
+              );
+              
+              if (botComment) {
+                // Update existing comment
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: botComment.id,
+                  body: report
+                });
+              } else {
+                // Create new comment
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: report
+                });
+              }
+            }
+            
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ matrix.benchmark-suite }}-${{ matrix.python-version }}
+          path: |
+            asv_benchmarks/results/
+            asv_benchmarks/.asv/
+          retention-days: 30
+          
+      - name: Generate HTML report (Comprehensive only)
+        if: matrix.benchmark-suite == 'comprehensive'
+        working-directory: asv_benchmarks
+        run: |
+          asv publish
+          
+      - name: Deploy performance dashboard (Main branch only)
+        if: github.ref == 'refs/heads/main' && matrix.benchmark-suite == 'comprehensive'
+        working-directory: asv_benchmarks
+        run: |
+          # This would deploy to GitHub Pages or another hosting service
+          echo "Would deploy performance dashboard here"
+          # Example: rsync -av html/ user@server:/var/www/performance/
+          
+  memory-profiling:
+    name: Memory Usage Analysis
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[tests]
+          pip install memory_profiler psutil
+          
+      - name: Run memory profiling
+        run: |
+          python -c "
+          import numpy as np
+          from sklearn.ensemble import RandomForestClassifier
+          from memory_profiler import profile
+          import psutil
+          import os
+          
+          @profile
+          def test_memory_usage():
+              # Generate test data
+              X = np.random.random((1000, 20))
+              y = np.random.randint(0, 2, 1000)
+              
+              # Train model
+              clf = RandomForestClassifier(n_estimators=100, random_state=42)
+              clf.fit(X, y)
+              
+              # Make predictions
+              predictions = clf.predict(X)
+              return predictions
+              
+          if __name__ == '__main__':
+              process = psutil.Process(os.getpid())
+              initial_memory = process.memory_info().rss / 1024 / 1024  # MB
+              
+              result = test_memory_usage()
+              
+              final_memory = process.memory_info().rss / 1024 / 1024  # MB
+              peak_memory = process.memory_info().peak_wss / 1024 / 1024 if hasattr(process.memory_info(), 'peak_wss') else final_memory
+              
+              print(f'Initial memory: {initial_memory:.2f} MB')
+              print(f'Final memory: {final_memory:.2f} MB')
+              print(f'Memory increase: {final_memory - initial_memory:.2f} MB')
+              print(f'Peak memory: {peak_memory:.2f} MB')
+          " > memory_report.txt
+          
+      - name: Upload memory report
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-report
+          path: memory_report.txt
+          retention-days: 7
+          
+  performance-regression-check:
+    name: Performance Regression Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    needs: benchmark
+    
+    steps:
+      - name: Download benchmark results
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-results-basic-3.11
+          path: benchmark-results/
+          
+      - name: Check for performance regressions
+        run: |
+          # This would analyze the benchmark results and fail if significant regressions are found
+          echo "Checking for performance regressions..."
+          
+          # Example logic:
+          # 1. Parse ASV comparison results
+          # 2. Check if any benchmark shows > 20% regression
+          # 3. Fail the job if critical regressions are found
+          
+          if [ -f "benchmark-results/comparison.txt" ]; then
+            # Parse comparison results and check for regressions
+            if grep -q "slower" benchmark-results/comparison.txt; then
+              echo "⚠️ Performance regressions detected!"
+              cat benchmark-results/comparison.txt
+              # Don't fail for now, just warn
+              # exit 1
+            else
+              echo "✅ No significant performance regressions detected"
+            fi
+          else
+            echo "No comparison results found"
+          fi
+          
+  update-performance-baseline:
+    name: Update Performance Baseline
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'schedule'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install asv virtualenv
+          
+      - name: Update performance baseline
+        working-directory: asv_benchmarks
+        run: |
+          asv machine --yes
+          asv run --show-stderr --python=same
+          
+      - name: Commit updated baseline
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          if [ -n "$(git status --porcelain asv_benchmarks/results/)" ]; then
+            git add asv_benchmarks/results/
+            git commit -m "Update performance baseline [skip ci]"
+            git push
+          else
+            echo "No changes to performance baseline"
+          fi

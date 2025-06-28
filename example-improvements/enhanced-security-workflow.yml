@@ -1,0 +1,131 @@
+# Enhanced Security Workflow for scikit-learn
+# Place in .github/workflows/security.yml
+
+name: Security Scan
+on:
+  push:
+    branches: [main, "*.X"]
+  pull_request:
+    branches: [main, "*.X"]
+  schedule:
+    - cron: '0 2 * * 1'  # Weekly security scan
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  security-scan:
+    name: Security Analysis
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      # SAST scanning with Semgrep
+      - name: Run Semgrep
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: >-
+            p/security-audit
+            p/secrets
+            p/python
+            p/bandit
+        env:
+          SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
+          
+      # Dependency vulnerability scanning
+      - name: Install Safety
+        run: pip install safety
+        
+      - name: Run Safety check
+        run: |
+          safety check --json --output safety-report.json || true
+          safety check --short-report
+          
+      - name: Upload Safety report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: safety-report
+          path: safety-report.json
+          retention-days: 30
+          
+      # Secret scanning
+      - name: Run TruffleHog
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: main
+          head: HEAD
+          extra_args: --debug --only-verified
+          
+      # SBOM generation
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: ./
+          format: spdx-json
+          output-file: sbom.spdx.json
+          
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.spdx.json
+          retention-days: 90
+          
+      # Container scanning (if applicable)
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+          
+  license-check:
+    name: License Compliance
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: Install pip-licenses
+        run: pip install pip-licenses
+        
+      - name: Install dependencies
+        run: pip install -e .[tests]
+        
+      - name: Check licenses
+        run: |
+          pip-licenses --format=json --output-file=licenses.json
+          pip-licenses --fail-on="GPL"  # Fail on GPL licenses
+          
+      - name: Upload license report
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-report
+          path: licenses.json
+          retention-days: 30
