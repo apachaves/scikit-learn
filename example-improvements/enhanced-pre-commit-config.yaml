@@ -1,0 +1,188 @@
+# Enhanced pre-commit configuration for scikit-learn
+# This extends the existing .pre-commit-config.yaml with additional security and quality checks
+
+repos:
+  # Basic file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-case-conflict
+      - id: check-json
+      - id: check-toml
+      - id: check-xml
+      - id: debug-statements
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+
+  # Security scanning
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: |
+          (?x)^(
+              .*\.lock$|
+              .*\.min\.js$|
+              .*\.map$
+          )$
+
+  # Python security
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.5
+    hooks:
+      - id: bandit
+        args: ['-r', 'sklearn/', '-f', 'json', '-o', 'bandit-report.json']
+        exclude: |
+          (?x)^(
+              sklearn/externals/.*|
+              .*/tests/.*|
+              .*test_.*\.py$
+          )$
+
+  # Import sorting
+  - repo: https://github.com/pycqa/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        args: ["--profile", "black", "--filter-files"]
+
+  # Code formatting
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.5.1
+    hooks:
+      - id: ruff
+        args: ["--fix", "--output-format=full"]
+      - id: ruff-format
+
+  - repo: https://github.com/psf/black
+    rev: 24.3.0
+    hooks:
+      - id: black
+
+  # Type checking
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.9.0
+    hooks:
+      - id: mypy
+        files: sklearn/
+        additional_dependencies: [pytest==6.2.4, numpy, scipy]
+        args: [--ignore-missing-imports, --allow-redefinition]
+
+  # Cython linting
+  - repo: https://github.com/MarcoGorelli/cython-lint
+    rev: v0.15.0
+    hooks:
+      - id: cython-lint
+
+  # Docstring formatting
+  - repo: https://github.com/pycqa/docformatter
+    rev: v1.7.5
+    hooks:
+      - id: docformatter
+        args: [
+          --in-place,
+          --wrap-summaries=88,
+          --wrap-descriptions=88,
+          --make-summary-multi-line,
+          --close-quotes-on-newline
+        ]
+
+  # Documentation checks
+  - repo: https://github.com/pycqa/pydocstyle
+    rev: 6.3.0
+    hooks:
+      - id: pydocstyle
+        files: sklearn/
+        args: [--convention=numpy]
+        exclude: |
+          (?x)^(
+              sklearn/externals/.*|
+              .*/tests/.*|
+              .*test_.*\.py$|
+              sklearn/_build_utils/.*
+          )$
+
+  # YAML/JSON formatting
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.0.3
+    hooks:
+      - id: prettier
+        files: ^doc/scss/|^doc/js/scripts/|\.ya?ml$|\.json$
+        exclude: ^doc/js/scripts/vendor/
+        types_or: ["scss", "javascript", "yaml", "json"]
+
+  # Shell script linting
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.9.0.6
+    hooks:
+      - id: shellcheck
+        files: \.sh$
+
+  # Markdown linting
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.37.0
+    hooks:
+      - id: markdownlint
+        args: [--fix]
+        exclude: |
+          (?x)^(
+              doc/whats_new/.*|
+              CHANGELOG\.md
+          )$
+
+  # License header check
+  - repo: https://github.com/Lucas-C/pre-commit-hooks
+    rev: v1.5.4
+    hooks:
+      - id: insert-license
+        files: \.py$
+        args:
+          - --license-filepath
+          - .license-header.txt
+          - --comment-style
+          - "#"
+        exclude: |
+          (?x)^(
+              sklearn/externals/.*|
+              .*/tests/.*|
+              setup\.py$|
+              conftest\.py$
+          )$
+
+  # Dependency checks
+  - repo: https://github.com/jazzband/pip-tools
+    rev: 7.3.0
+    hooks:
+      - id: pip-compile
+        files: requirements\.in$
+        args: [--generate-hashes]
+
+  # Performance checks
+  - repo: local
+    hooks:
+      - id: check-performance-regression
+        name: Check for performance regressions
+        entry: python build_tools/check_performance.py
+        language: system
+        files: sklearn/.*\.py$
+        pass_filenames: false
+
+# Configuration for specific tools
+ci:
+  autofix_commit_msg: |
+    [pre-commit.ci] auto fixes from pre-commit.com hooks
+
+    for more information, see https://pre-commit.ci
+  autofix_prs: true
+  autoupdate_branch: ''
+  autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
+  autoupdate_schedule: weekly
+  skip: [bandit, check-performance-regression]  # Skip slow hooks in CI
+  submodules: false
