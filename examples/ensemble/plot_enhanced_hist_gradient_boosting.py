@@ -1,32 +1,57 @@
 """
-Enhanced Histogram-based Gradient Boosting Demonstration
-=========================================================
+=======================================================
+Enhanced Histogram-based Gradient Boosting Techniques
+=======================================================
 
-This example demonstrates the enhanced HistGradientBoosting estimators
-with additional solvers, robust loss functions, and advanced features.
+This example demonstrates the enhanced features of the Enhanced HistGradientBoosting
+estimators, showcasing multiple optimization solvers, robust loss functions, 
+advanced regularization techniques, and enhanced interpretability features.
+
+The enhanced estimators extend the standard HistGradientBoosting implementations
+with modern machine learning techniques while maintaining full backward compatibility.
+
+Key features demonstrated:
+1. Multiple optimization solvers (Newton-Raphson, SGD, Coordinate Descent)
+2. Robust loss functions (Huber loss for regression, Focal loss for classification)
+3. Advanced regularization (L1, Elastic Net, Dropout)
+4. Multi-output regression capabilities
+5. Enhanced interpretability with multiple feature importance methods
+6. Learning rate scheduling and ensemble diversity techniques
 """
+
+# Authors: The scikit-learn developers
+# SPDX-License-Identifier: BSD-3-Clause
 
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.datasets import make_regression, make_classification
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error, r2_score, accuracy_score
-from sklearn.ensemble import HistGradientBoostingRegressor
+from sklearn.metrics import mean_squared_error, r2_score, accuracy_score, f1_score
+from sklearn.ensemble import HistGradientBoostingRegressor, HistGradientBoostingClassifier
 from sklearn.ensemble import (
     EnhancedHistGradientBoostingRegressor,
     EnhancedHistGradientBoostingClassifier,
 )
+from sklearn.ensemble._enhanced_hist_gradient_boosting import EnhancedBoostingConfig
 
 print(__doc__)
 
 # %%
-# Regression Example with Outliers
-# ---------------------------------
+# Regression Example with Outliers: Robust Loss Functions
+# --------------------------------------------------------
+# 
+# We start by demonstrating how robust loss functions in enhanced estimators
+# can better handle datasets with outliers compared to standard implementations.
+
+print("=" * 60)
+print("1. Robust Regression with Outliers")
+print("=" * 60)
 
 # Generate regression data with outliers
+np.random.seed(42)
 X, y = make_regression(n_samples=1000, n_features=10, noise=0.1, random_state=42)
 
-# Add outliers
+# Add significant outliers to make the problem challenging
 outlier_indices = np.random.choice(len(y), size=50, replace=False)
 y[outlier_indices] += np.random.normal(0, 10, size=50)
 
