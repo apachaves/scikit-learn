@@ -8,3 +8,4 @@ py.extension_module(
 )
 
 subdir('_hist_gradient_boosting')
+subdir('_enhanced_hist_gradient_boosting')
