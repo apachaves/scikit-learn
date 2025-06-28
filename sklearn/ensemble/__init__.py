@@ -17,6 +17,10 @@ from ._hist_gradient_boosting.gradient_boosting import (
     HistGradientBoostingClassifier,
     HistGradientBoostingRegressor,
 )
+from ._enhanced_hist_gradient_boosting import (
+    EnhancedHistGradientBoostingClassifier,
+    EnhancedHistGradientBoostingRegressor,
+)
 from ._iforest import IsolationForest
 from ._stacking import StackingClassifier, StackingRegressor
 from ._voting import VotingClassifier, VotingRegressor
@@ -34,6 +38,8 @@ __all__ = [
     "GradientBoostingRegressor",
     "HistGradientBoostingClassifier",
     "HistGradientBoostingRegressor",
+    "EnhancedHistGradientBoostingClassifier",
+    "EnhancedHistGradientBoostingRegressor",
     "IsolationForest",
     "RandomForestClassifier",
     "RandomForestRegressor",

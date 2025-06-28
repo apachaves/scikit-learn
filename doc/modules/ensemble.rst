@@ -1014,6 +1014,8 @@ on your specific problem to determine which model is the best fit.
 
 * :ref:`sphx_glr_auto_examples_ensemble_plot_forest_hist_grad_boosting_comparison.py`
 
+.. include:: enhanced_ensemble_addition.rst
+
 Extremely Randomized Trees
 --------------------------
 

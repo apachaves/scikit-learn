@@ -360,6 +360,8 @@ API_REFERENCE = {
                     "GradientBoostingRegressor",
                     "HistGradientBoostingClassifier",
                     "HistGradientBoostingRegressor",
+                    "EnhancedHistGradientBoostingClassifier",
+                    "EnhancedHistGradientBoostingRegressor",
                     "IsolationForest",
                     "RandomForestClassifier",
                     "RandomForestRegressor",
